@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Network Security Monitor - Real-time authorized packet capture, protocol analysis, and SOC traffic visualization.">
+    <title>Network Security Monitor | Authorized SOC Dashboard</title>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js CDN for Analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="soc-theme">
+    <!-- Top Navigation / Header -->
+    <header class="soc-header">
+        <div class="header-container">
+            <div class="brand-group">
+                <div class="brand-icon-wrapper">
+                    <i class="fa-solid fa-shield-halved brand-shield"></i>
+                    <span class="radar-ping"></span>
+                </div>
+                <div>
+                    <h1 class="header-title">NETWORK SECURITY MONITOR</h1>
+                    <p class="header-subtitle">Authorized Local Network Monitoring &bull; CodeAlpha Task 1</p>
+                </div>
+            </div>
+
+            <!-- Header Controls & Actions -->
+            <div class="header-actions">
+                <div class="status-indicator-pill" id="globalStatusPill">
+                    <span class="pulse-dot active" id="pulseDot"></span>
+                    <span class="status-text" id="globalStatusText">Live Sniffing Active</span>
+                </div>
+
+                <div class="interface-selector-wrapper">
+                    <i class="fa-solid fa-network-wired select-icon"></i>
+                    <select id="interfaceSelect" class="soc-select" title="Select Network Interface">
+                        <option value="default">Default Interface</option>
+                        {% for iface in interfaces %}
+                        <option value="{{ iface.id }}">{{ iface.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="btn-group">
+                    <button id="toggleSnifferBtn" class="btn btn-warning" title="Toggle packet capture">
+                        <i class="fa-solid fa-pause"></i> <span id="toggleBtnText">Pause</span>
+                    </button>
+                    <button id="clearDataBtn" class="btn btn-secondary" title="Clear packet stream and counters">
+                        <i class="fa-solid fa-trash-can"></i> Clear
+                    </button>
+                    <button id="exportCsvBtn" class="btn btn-outline" title="Export captured metadata as CSV">
+                        <i class="fa-solid fa-file-export"></i> Export CSV
+                    </button>
+                    <button id="testTrafficBtn" class="btn btn-cyan" title="Generate authorized local test traffic">
+                        <i class="fa-solid fa-bolt"></i> Test Probe
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="dashboard-main">
+        <!-- Privacy & Safety Compliance Notice -->
+        <section class="privacy-banner" id="privacyBanner">
+            <div class="privacy-icon">
+                <i class="fa-solid fa-lock"></i>
+            </div>
+            <div class="privacy-content">
+                <strong>AUTHORIZED MONITORING ONLY:</strong>
+                Packet contents, passwords, credentials and private messages are not displayed or stored.
+                Only transport and network layer metadata (IP addresses, ports, protocol types, packet sizes) is inspected.
+            </div>
+            <div class="privacy-badge">
+                <i class="fa-solid fa-circle-check"></i> PRIVACY COMPLIANT
+            </div>
+        </section>
+
+        <!-- SOC Alert / Error Notice (Shown if capture error occurred) -->
+        <div id="alertNotice" class="alert-notice hidden">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            <span id="alertNoticeMessage">Notice: Elevated privileges may be required for packet capture.</span>
+        </div>
+
+        <!-- 5 Key SOC Metric Cards -->
+        <section class="metrics-grid">
+            <!-- 1. Total Packets -->
+            <div class="metric-card card-total">
+                <div class="metric-header">
+                    <span class="metric-label">TOTAL PACKETS</span>
+                    <div class="metric-icon-badge total-badge">
+                        <i class="fa-solid fa-cubes"></i>
+                    </div>
+                </div>
+                <div class="metric-body">
+                    <h2 class="metric-value" id="cardTotalPackets">0</h2>
+                    <div class="metric-footer">
+                        <span class="rate-tag" id="cardPacketRate"><i class="fa-solid fa-wave-square"></i> 0.0 pps</span>
+                        <span class="volume-tag" id="cardTotalVolume">0 B</span>
+                    </div>
+                </div>
+                <div class="card-glow"></div>
+            </div>
+
+            <!-- 2. TCP Packets -->
+            <div class="metric-card card-tcp">
+                <div class="metric-header">
+                    <span class="metric-label">TCP PACKETS</span>
+                    <div class="metric-icon-badge tcp-badge">
+                        <i class="fa-solid fa-arrows-split-up-and-left"></i>
+                    </div>
+                </div>
+                <div class="metric-body">
+                    <h2 class="metric-value" id="cardTcpPackets">0</h2>
+                    <div class="metric-footer">
+                        <div class="progress-bar-container">
+                            <div class="progress-fill tcp-fill" id="tcpProgress" style="width: 0%;"></div>
+                        </div>
+                        <span class="percent-tag" id="cardTcpPercent">0%</span>
+                    </div>
+                </div>
+                <div class="card-glow"></div>
+            </div>
+
+            <!-- 3. UDP Packets -->
+            <div class="metric-card card-udp">
+                <div class="metric-header">
+                    <span class="metric-label">UDP PACKETS</span>
+                    <div class="metric-icon-badge udp-badge">
+                        <i class="fa-solid fa-paper-plane"></i>
+                    </div>
+                </div>
+                <div class="metric-body">
+                    <h2 class="metric-value" id="cardUdpPackets">0</h2>
+                    <div class="metric-footer">
+                        <div class="progress-bar-container">
+                            <div class="progress-fill udp-fill" id="udpProgress" style="width: 0%;"></div>
+                        </div>
+                        <span class="percent-tag" id="cardUdpPercent">0%</span>
+                    </div>
+                </div>
+                <div class="card-glow"></div>
+            </div>
+
+            <!-- 4. ICMP Packets -->
+            <div class="metric-card card-icmp">
+                <div class="metric-header">
+                    <span class="metric-label">ICMP PACKETS</span>
+                    <div class="metric-icon-badge icmp-badge">
+                        <i class="fa-solid fa-satellite-dish"></i>
+                    </div>
+                </div>
+                <div class="metric-body">
+                    <h2 class="metric-value" id="cardIcmpPackets">0</h2>
+                    <div class="metric-footer">
+                        <div class="progress-bar-container">
+                            <div class="progress-fill icmp-fill" id="icmpProgress" style="width: 0%;"></div>
+                        </div>
+                        <span class="percent-tag" id="cardIcmpPercent">0%</span>
+                    </div>
+                </div>
+                <div class="card-glow"></div>
+            </div>
+
+            <!-- 5. Monitoring Status -->
+            <div class="metric-card card-status">
+                <div class="metric-header">
+                    <span class="metric-label">MONITORING STATUS</span>
+                    <div class="metric-icon-badge status-badge">
+                        <i class="fa-solid fa-heart-pulse"></i>
+                    </div>
+                </div>
+                <div class="metric-body">
+                    <div class="status-main-row">
+                        <span class="live-dot" id="cardStatusDot"></span>
+                        <h2 class="status-value-text" id="cardStatusText">Live Sniffing Active</h2>
+                    </div>
+                    <div class="metric-footer status-details">
+                        <span class="uptime-badge"><i class="fa-regular fa-clock"></i> Uptime: <strong id="cardUptime">0s</strong></span>
+                        <span class="iface-badge"><i class="fa-solid fa-ethernet"></i> <span id="cardIface">Auto</span></span>
+                    </div>
+                </div>
+                <div class="card-glow"></div>
+            </div>
+        </section>
+
+        <!-- Visual Analytics Grid (Protocol Distribution & Traffic Flow) -->
+        <section class="analytics-grid">
+            <!-- PROTOCOL DISTRIBUTION -->
+            <div class="panel-card protocol-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fa-solid fa-chart-pie panel-icon"></i>
+                        <span>PROTOCOL DISTRIBUTION</span>
+                    </div>
+                    <span class="panel-tag">L3/L4 Breakdown</span>
+                </div>
+                <div class="panel-body chart-body">
+                    <div class="chart-wrapper">
+                        <canvas id="protocolDoughnutChart" width="220" height="220"></canvas>
+                        <div class="chart-center-info">
+                            <span class="center-count" id="chartCenterTotal">0</span>
+                            <span class="center-label">Packets</span>
+                        </div>
+                    </div>
+                    <div class="protocol-legend" id="protocolLegend">
+                        <div class="legend-row">
+                            <span class="legend-dot tcp-color"></span>
+                            <span class="legend-label">TCP:</span>
+                            <strong class="legend-val" id="legendTcp">0 (0%)</strong>
+                        </div>
+                        <div class="legend-row">
+                            <span class="legend-dot udp-color"></span>
+                            <span class="legend-label">UDP:</span>
+                            <strong class="legend-val" id="legendUdp">0 (0%)</strong>
+                        </div>
+                        <div class="legend-row">
+                            <span class="legend-dot icmp-color"></span>
+                            <span class="legend-label">ICMP:</span>
+                            <strong class="legend-val" id="legendIcmp">0 (0%)</strong>
+                        </div>
+                        <div class="legend-row">
+                            <span class="legend-dot other-color"></span>
+                            <span class="legend-label">Other:</span>
+                            <strong class="legend-val" id="legendOther">0 (0%)</strong>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- NETWORK TRAFFIC VISUALIZATION -->
+            <div class="panel-card traffic-panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fa-solid fa-diagram-project panel-icon"></i>
+                        <span>NETWORK TRAFFIC VISUALIZATION</span>
+                    </div>
+                    <div class="traffic-stats-mini">
+                        <span class="traffic-tag"><i class="fa-solid fa-circle-nodes"></i> Live Packet Flow</span>
+                    </div>
+                </div>
+                <div class="panel-body traffic-visualizer-body">
+                    <!-- Dynamic Canvas Showing Packet Flow between Source and Destination -->
+                    <div class="canvas-container">
+                        <canvas id="trafficFlowCanvas"></canvas>
+                        <div class="flow-overlay-endpoints">
+                            <div class="flow-column left">
+                                <span class="column-title"><i class="fa-solid fa-arrow-right-from-bracket"></i> Source Hosts</span>
+                                <ul id="topSourcesList" class="host-nodes-list">
+                                    <li class="host-node empty">Awaiting packets...</li>
+                                </ul>
+                            </div>
+                            <div class="flow-column center">
+                                <div class="flow-core-hub">
+                                    <i class="fa-solid fa-shield-virus hub-icon"></i>
+                                    <span>SECURITY INSPECTION</span>
+                                </div>
+                            </div>
+                            <div class="flow-column right">
+                                <span class="column-title"><i class="fa-solid fa-arrow-right-to-bracket"></i> Destination Hosts</span>
+                                <ul id="topDestinationsList" class="host-nodes-list">
+                                    <li class="host-node empty">Awaiting packets...</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- LIVE PACKET STREAM -->
+        <section class="panel-card stream-panel">
+            <div class="panel-header stream-header">
+                <div class="panel-title">
+                    <i class="fa-solid fa-list-check panel-icon"></i>
+                    <span>LIVE PACKET STREAM</span>
+                    <span class="stream-counter-badge" id="streamCounterBadge">0 captured</span>
+                </div>
+                
+                <!-- Table Controls / Filters -->
+                <div class="stream-controls">
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="packetSearchInput" class="soc-input" placeholder="Filter by IP or Port...">
+                    </div>
+
+                    <div class="filter-pills" id="protocolFilterGroup">
+                        <button class="filter-pill active" data-filter="ALL">ALL</button>
+                        <button class="filter-pill" data-filter="TCP">TCP</button>
+                        <button class="filter-pill" data-filter="UDP">UDP</button>
+                        <button class="filter-pill" data-filter="ICMP">ICMP</button>
+                    </div>
+
+                    <label class="auto-scroll-toggle" title="Automatically keep latest packets in view">
+                        <input type="checkbox" id="autoScrollCheck" checked>
+                        <span>Auto-Scroll</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="panel-body table-responsive" id="tableContainer">
+                <table class="soc-table" id="packetsTable">
+                    <thead>
+                        <tr>
+                            <th style="width: 100px;">Time</th>
+                            <th style="width: 180px;">Source IP</th>
+                            <th style="width: 180px;">Destination IP</th>
+                            <th style="width: 110px;">Protocol</th>
+                            <th style="width: 110px;">Source Port</th>
+                            <th style="width: 120px;">Destination Port</th>
+                            <th style="width: 110px;">Packet Size</th>
+                            <th style="width: 120px;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="packetsTableBody">
+                        <tr class="empty-row" id="emptyStateRow">
+                            <td colspan="8">
+                                <div class="table-empty-state">
+                                    <i class="fa-solid fa-radar fa-spin-pulse empty-icon"></i>
+                                    <p>Listening for authorized IP packets on network interface...</p>
+                                    <small>Generate local network traffic (ping, browser request, DNS) to observe real-time capture.</small>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="stream-footer">
+                <div class="stream-buffer-info">
+                    <i class="fa-solid fa-circle-info"></i> Displaying recent captured IP frames &bull; Payload inspection suppressed.
+                </div>
+                <div class="stream-quick-actions">
+                    <button id="quickPingBtn" class="btn-text"><i class="fa-solid fa-satellite-dish"></i> Send ICMP Ping Probe</button>
+                    <button id="quickDnsBtn" class="btn-text"><i class="fa-solid fa-globe"></i> Send UDP DNS Probe</button>
+                    <button id="quickTcpBtn" class="btn-text"><i class="fa-solid fa-link"></i> Send TCP Handshake Probe</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECURITY INFORMATION & KNOWLEDGE BASE PANEL -->
+        <section class="panel-card security-info-panel">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <i class="fa-solid fa-graduation-cap panel-icon"></i>
+                    <span>SECURITY OPERATIONS & PROTOCOL KNOWLEDGE BASE</span>
+                </div>
+                <span class="panel-tag">Educational Reference</span>
+            </div>
+            <div class="panel-body">
+                <div class="info-grid">
+                    <!-- Card 1 -->
+                    <div class="info-item">
+                        <div class="info-item-header">
+                            <i class="fa-solid fa-microscope info-item-icon"></i>
+                            <h3>What is Packet Sniffing?</h3>
+                        </div>
+                        <p>
+                            Packet sniffing is the practice of intercepting and logging network traffic that passes across a computer network or interface. By tapping into raw socket frames, network analyzers inspect frame headers to evaluate protocol health, troubleshoot routing issues, and uncover unauthorized anomalies.
+                        </p>
+                    </div>
+
+                    <!-- Card 2 -->
+                    <div class="info-item">
+                        <div class="info-item-header">
+                            <i class="fa-solid fa-tower-broadcast info-item-icon"></i>
+                            <h3>Why Network Monitoring is Useful</h3>
+                        </div>
+                        <p>
+                            Security Operations Centers (SOCs) rely on 24/7 continuous traffic monitoring to detect cyber threats, lateral movement, port scans, data exfiltration attempts, and distributed denial-of-service (DDoS) spikes. Visibility into IP flow pairs enables rapid incident containment.
+                        </p>
+                    </div>
+
+                    <!-- Card 3 -->
+                    <div class="info-item">
+                        <div class="info-item-header">
+                            <i class="fa-solid fa-handshake info-item-icon"></i>
+                            <h3>TCP Monitoring</h3>
+                        </div>
+                        <p>
+                            Transmission Control Protocol (TCP) is a connection-oriented, reliable transport protocol with a 3-way handshake (SYN, SYN-ACK, ACK). SOC analysts monitor TCP port pairs to detect unusual connections to high-risk ports, port enumeration scans, and persistent reverse shells.
+                        </p>
+                    </div>
+
+                    <!-- Card 4 -->
+                    <div class="info-item">
+                        <div class="info-item-header">
+                            <i class="fa-solid fa-bolt-lightning info-item-icon"></i>
+                            <h3>UDP Monitoring</h3>
+                        </div>
+                        <p>
+                            User Datagram Protocol (UDP) is connectionless and low-overhead, commonly carrying DNS queries (port 53), DHCP, VoIP, and video streaming. Because UDP lacks handshakes, monitoring UDP packet rates is vital for identifying DNS amplification attacks and UDP flood vectors.
+                        </p>
+                    </div>
+
+                    <!-- Card 5 -->
+                    <div class="info-item">
+                        <div class="info-item-header">
+                            <i class="fa-solid fa-ping-pong-paddle-ball info-item-icon"></i>
+                            <h3>ICMP Monitoring</h3>
+                        </div>
+                        <p>
+                            Internet Control Message Protocol (ICMP) operates at the network layer for diagnostics (e.g., Echo Request/Reply used by <code>ping</code>, Destination Unreachable, TTL Expired). SOC monitors track ICMP volume to detect Ping Sweeps, ICMP tunneling, and Smurf attack floods.
+                        </p>
+                    </div>
+
+                    <!-- Card 6 -->
+                    <div class="info-item">
+                        <div class="info-item-header">
+                            <i class="fa-solid fa-scale-balanced info-item-icon"></i>
+                            <h3>Importance of Authorized Monitoring</h3>
+                        </div>
+                        <p>
+                            Network packet analysis must strictly be performed in authorized environments with explicit consent. Unsanctioned sniffing violates privacy laws, data protection standards (GDPR, HIPAA), and computer crime statutes. This defensive tool deliberately ignores packet payloads to safeguard privacy.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="soc-footer">
+        <div class="footer-container">
+            <div>
+                <strong>Network Security Monitor</strong> &bull; CodeAlpha Cyber Security Internship Task 1
+            </div>
+            <div class="footer-notice">
+                <i class="fa-solid fa-shield-cat"></i> Authorized Defensive Telemetry &bull; Zero Payload Storage Enforced
+            </div>
+        </div>
+    </footer>
+
+    <!-- Custom Frontend Logic -->
+    <script src="{{ url_for('static', filename='dashboard.js') }}"></script>
+</body>
+</html>
